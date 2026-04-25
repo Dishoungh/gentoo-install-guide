@@ -311,7 +311,7 @@ sys-kernel/installkernel dracut grub
 ```
 kernel_cmdline=" root=UUID={Root Partition UUID} "
 ```
-6. `emerge -avq sys-firmware/sof-firmware sys-kernel/installkernel sys-kernel/dracut sys-kernel/linux-firmware`
+6. `emerge -avq sys-firmware/sof-firmware sys-kernel/installkernel sys-kernel/dracut sys-kernel/linux-firmware sys-kernel/gentoo-kernel-bin`
 
 ### <ins>Fstab and Network Configuration</ins>
 
