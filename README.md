@@ -232,7 +232,7 @@ To setup the base system:
 3. `mirrorselect -i -o >> /etc/portage/make.conf`
     - I pretty much just selected all U.S mirrors
     - ![Source Mirrors](./Images/Gentoo-Mirrors.png)
-4. `emerge -avq app-misc/screen`
+4. `emerge -avq app-misc/screen app-portage/eix`
     - I need this so I can be able to scroll up and down in a virtual terminal because a lot of the output can go beyond what I can see on the normal screen
     - To view current sessions: `screen -ls`
     - To start and name a session: `screen -S {name}`
