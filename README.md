@@ -17,7 +17,8 @@ First thing is to get the AMD64 minimalist ISO from [Gentoo's website](https://w
 After acquiring the ISO, I created a new VM using [Virtual Machine Manager](https://virt-manager.org/):
 - CPUs: 4
 - RAM: 8 GiB
-- Storage: 400 GiB
+- Storage 1: 400 GiB
+- Storage 2: 200 GiB
 - Video: VirtIO
 - Display: SPICE
     - ![VMM Display](./Images/VMM-Display-SPICE.png)
@@ -110,6 +111,10 @@ Now to mount the root and boot partitions:
 2. `mount /dev/vda3 /mnt/gentoo`
 3. `mkdir -p /mnt/gentoo/boot`
 4. `mount /dev/vda1 /mnt/gentoo/boot`
+
+### <ins>BTRFS Subvolumes</ins>
+
+I need to create 
 
 ### <ins>Stage File Installation</ins>
 
