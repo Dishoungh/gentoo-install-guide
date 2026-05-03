@@ -94,8 +94,25 @@ This is the series of commands I used to format my disk:
 22. `w`
     - Writes to the partition table and creates the partitions on the disk
 
-Now to actually format the partitions:
+Do the same thing to `/dev/vdb` except we will only have one partition for it:
+1. `fdisk /dev/vdb`
+    - Starts setup for /dev/vdb
+2. `n`
+    - Creates a new partition
+3. `p`
+    - Partition Type: Primary
+4. `1`
+    - Creates partition #1
+5.  Press Enter
+    - Starts Partition 1 at wherever is the next available sector
+6. Press Enter
+    - Use the rest of the disk for the Linux partition
+7. `w`
 
+Storage should now look like this:
+![lsblk](./Images/Lsblk.png)
+
+Now to actually format the partitions:
 - EFI Partition (/dev/vda1)
     - `mkfs.vfat -F32 /dev/vda1`
         - This means to "make filesystem that is FAT32 on /dev/vda1 (the first partition)"
@@ -104,24 +121,48 @@ Now to actually format the partitions:
     - `swapon /dev/vda2`
 - Root Partition (/dev/vda3)
     - `mkfs.btrfs /dev/vda3`
-
-Now to mount the root and boot partitions:
-
-1. `mkdir -p /mnt/gentoo`
-2. `mount /dev/vda3 /mnt/gentoo`
-3. `mkdir -p /mnt/gentoo/boot`
-4. `mount /dev/vda1 /mnt/gentoo/boot`
+- Secondary Partition (/dev/vdb1)
+    - `mkfs.ext4 /dev/vdb1`
 
 ### <ins>BTRFS Subvolumes</ins>
 
-I need to create 
+I need to create btrfs subvolumes:
+- `mkdir -p /mnt/gentoo`
+- `mount /dev/vda3 /mnt/gentoo`
+- `cd /mnt/gentoo`
+- `btrfs subvolume create @`
+- `btrfs subvolume create @root`
+- `btrfs subvolume create @opt`
+- `btrfs subvolume create @srv`
+- `btrfs subvolume create @local`
+- `btrfs subvolume create @var`
+- `btrfs subvolume create @tmp`
+- `btrfs subvolume create @.snapshots`
+- `cd`
+- `umount -r /mnt/gentoo`
+
+### <ins>Mount Storage Partitions</ins>
+
+Now to mount all the partitions:
+1. `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@ /dev/vda3 /mnt/gentoo`
+2. `mkdir -p /mnt/gentoo/{root,opt,srv,usr/local,var,tmp,.snapshots,boot,mnt/secondary}`
+3. `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@root /dev/vda3 /mnt/gentoo/root`
+4. `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@opt /dev/vda3 /mnt/gentoo/opt
+5. `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@srv /dev/vda3 /mnt/gentoo/srv`
+6. `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@local /dev/vda3 /mnt/gentoo/usr/local
+7. `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@var /dev/vda3 /mnt/gentoo/var`
+8. `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@tmp /dev/vda3 /mnt/gentoo/tmp`
+9. `mount /dev/vda1 /mnt/gentoo/boot`
+10. `mount /dev/vdb1 /mnt/gentoo/mnt/secondary`
+11. `lsblk`
+
+![lsblk](./Images/Lsblk2.png)
 
 ### <ins>Stage File Installation</ins>
 
 The partitions created and mounted. It's time to get the stage file for Gentoo, which is an archive containing all necessary files to run a minimal Gentoo build. To acquire it:
 
-1. `cd /mnt/gentoo`
-2. `links https://www.gentoo.org/downloads/mirrors/`
+1. `links https://www.gentoo.org/downloads/mirrors/`
     - Scroll down to the regions screen:
         - ![Regions Screen](./Images/Regions-Links-Screen.png)
     - Pick a mirror URL (I just picked the first one)
@@ -129,13 +170,14 @@ The partitions created and mounted. It's time to get the stage file for Gentoo, 
     - Go to *releases* --> *amd64* --> *autobuilds* --> *current-stage3-amd64-desktop-openrc*
     - Download the latest .tar.xz file
         - ![Stage3 Tarball](./Images/Latest-Stage3-Tarball.png)
-3. `tar -xpvf ./stage3-*.tar.xz --xattrs-include='*.*' --numeric-owner -C /mnt/gentoo`
+2. `tar -xpvf ./stage3-*.tar.xz --xattrs-include='*.*' --numeric-owner -C /mnt/gentoo`
+3. `cd /mnt/gentoo`
 
 ### <ins>Base System Installation</ins>
 
 Now that I have the base files for our Gentoo build, time to configure some options for Portage, Gentoo's package management system:
 
-- `cp --dereference /etc/resolv.conf /mnt/gentoo/etc/`
+- `cp --dereference --verbose /etc/resolv.conf /mnt/gentoo/etc/`
 - `nano /mnt/gentoo/etc/portage/make.conf`
 ```
 # Global Compiler Flags
@@ -166,6 +208,8 @@ Of course, I will add to the make.conf later. For now, it's time to add the othe
 6. `mount --bind /run /mnt/gentoo/run`
 7. `mount --make-slave /mnt/gentoo/run`
 
+### <ins>Chroot</ins>
+
 Now that the virtual filesystems are installed, it's time to chroot (Change Root) to the install location (/mnt/gentoo):
 
 1. `chroot /mnt/gentoo /bin/bash`
@@ -173,32 +217,38 @@ Now that the virtual filesystems are installed, it's time to chroot (Change Root
 3. `export PS1="(chroot) ${PS1}`
     - The screen should now look like this:
         - ![Chroot](./Images/Chroot.png)
-4. `rm ./stage3-*.tar.xz`
 
 ### <ins>How To Resume Install</ins>
 
 **Warning: This step is not needed after the [Bootloader](#bootloader-installation) section below. At that point, you should be able to just boot into the actual disk instead of the ISO.**
 
-This is a good stopping point here and I'll include this little section here since I know I will be on and off from this install. This section will show how to get back in the install root to resume the process because I'm trying to have a life lol
+This is a good stopping point here and I'll include this little section here since I know I will be on and off from this install process. This section will show how to get back in the install root to resume the process because I'm trying to have a life lol
 
-1. `mount /dev/vda3 /mnt/gentoo`
-2. `mount /dev/vda1 /mnt/gentoo/boot`
-3. `swapon /dev/vda2`
-4. `mount --types proc /proc /mnt/gentoo/proc`
-5. `mount --rbind /sys /mnt/gentoo/sys`
-6. `mount --make-rslave /mnt/gentoo/sys`
-7. `mount --rbind /dev /mnt/gentoo/dev`
-8. `mount --make-rslave /mnt/gentoo/dev`
-9. `mount --bind /run /mnt/gentoo/run`
-10. `mount --make-slave /mnt/gentoo/run`
-11. `chroot /mnt/gentoo /bin/bash`
-12. `source /etc/profile`
-13. `export PS1="(chroot) ${PS1}"`
+1. `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@ /dev/vda3 /mnt/gentoo`
+2. `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@root /dev/vda3 /mnt/gentoo/root`
+3. `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@opt /dev/vda3 /mnt/gentoo/opt
+4. `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@srv /dev/vda3 /mnt/gentoo/srv`
+5. `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@local /dev/vda3 /mnt/gentoo/usr/local
+6. `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@var /dev/vda3 /mnt/gentoo/var`
+7. `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@tmp /dev/vda3 /mnt/gentoo/tmp`
+8. `mount /dev/vda1 /mnt/gentoo/boot`
+9. `mount /dev/vdb1 /mnt/gentoo/mnt/secondary`
+10. `swapon /dev/vda2`
+11. `mount --types proc /proc /mnt/gentoo/proc`
+12. `mount --rbind /sys /mnt/gentoo/sys`
+13. `mount --make-rslave /mnt/gentoo/sys`
+14. `mount --rbind /dev /mnt/gentoo/dev`
+15. `mount --make-rslave /mnt/gentoo/dev`
+16. `mount --bind /run /mnt/gentoo/run`
+17. `mount --make-slave /mnt/gentoo/run`
+18. `chroot /mnt/gentoo /bin/bash`
+19. `source /etc/profile`
+20. `export PS1="(chroot) ${PS1}"`
 
 After seeing this screen, continue to whichever section you left off:
 - ![Chroot](./Images/Chroot.png)
 
-### <ins>Base System Configuration</ins>
+### <ins>Continuing Base System Configuration</ins>
 
 After mounting the virtual filesystems and changing root, we need to setup our Base System as a Binary Host. This allows us for quicker and easier package installs. First, we need to setup our binhost conf file:
 - `nano /etc/portage/binrepos.conf/gentoo.conf`
@@ -206,25 +256,25 @@ After mounting the virtual filesystems and changing root, we need to setup our B
 ```
 [gentoo]
 priority = 9959
-sync-uri = https://distfiles.gentoo.org/releases/amd64/binpackages/23.0/x86-64/
+sync-uri = https://distfiles.gentoo.org/releases/amd64/binpackages/23.0/x86-64
 location = /var/cache/binhost/gentoo
 verify-signature = true
 
 [gentoo-x86-64-v3]
-priority = 9959
-sync-uri = https://distfiles.gentoo.org/releases/amd64/binpackages/23.0/x86-64-v3/
+priority = 9999
+sync-uri = https://distfiles.gentoo.org/releases/amd64/binpackages/23.0/x86-64-v3
 location = /var/cache/binhost/gentoo-x86-64-v3
 verify-signature = true
 ```
 
 Edit *make.conf* and add these lines:
-- `vim /etc/portage/make.conf`
-    - The Gentoo wiki recommends using --usepkgonly, but I'm not going to do that since that option hides a lot of important informtion like USE flag conflicts and how to resolve said conflicts. But if you want to use that option, go ahead. Also of course, replace `jobs {N}` with the number of processing cores.
+- `nano /etc/portage/make.conf`
+    - The Gentoo wiki recommends using --usepkgonly, but I'm not going to do that since that option hides a lot of important information like USE flag conflicts and how to resolve said conflicts. But if you want to use that option, go ahead. Also of course, replace jobs {N} with the number of processing cores.
 
 ```
 # Portage Settings
 FEATURES="${FEATURES} getbinpkg binpkg-request-signature"
-EMERGE_DEFAULT_OPTS="--getbinpkg --with-bdeps=y --binpkg-respect-use=y --jobs 4"
+EMERGE_DEFAULT_OPTS="--getbinpkg --with-bdeps=y --binpkg-respect-use=y --jobs {N}"
 ```
 
 To setup the base system:
@@ -232,7 +282,7 @@ To setup the base system:
 1. `emerge --sync`
     - Synchronizes your local system to remote mirrors that might have updated packages
     - Equivalent to `pacman -Syy` for you Arch folks...ugh!
-2. `emerge -avq1 app-portage/mirrorselect`
+2. `emerge -avqn1 app-portage/mirrorselect`
     - ![Binary Package](./Images/Binary-Package-Example.png)
 3. `mirrorselect -i -o >> /etc/portage/make.conf`
     - I pretty much just selected all U.S mirrors
@@ -249,31 +299,31 @@ To setup the base system:
     - To wipe dead sessions: `screen -wipe`
 5. `eselect profile list`
 6. `eselect profile set 7`
-    - I want KDE Plasma...because of course I do.
+    - I want KDE Plasma...because I'm so original and totally not like everyone else on the planet.
     - But, of course, choose any profile you want
     - In the future, it may not be the 7th option
     - ![Desktop Profiles](./Images/Portage-Profiles.png)
 7. `emerge -avq1 app-portage/cpuid2cpuflags`
 8. `echo "*/* $(cpuid2cpuflags)" > /etc/portage/package.use/00cpu-flags`
-9. `echo "*/* VIDEO_CARDS: -* virgl" > /etc/portage/package.use/00video_cards`
+9. `echo "*/* VIDEO_CARDS: -* virgl" > /etc/portage/package.use/00video-cards`
     - Since I'm using a Virtual Machine with a virtualized GPU, the Video Card I'm using will be `virgl`
-    - For NVIDIA: `echo "*/* VIDEO_CARDS: -* nvidia" > /etc/portage/package.use/00video_cards`
-    - For AMD: `echo "*/* VIDEO_CARDS: -* amdgpu radeonsi" > /etc/portage/package.use/00video_cards`
-    - For Intel: `echo "*/* VIDEO_CARDS: -* intel" > /etc/portage/package.use/00video_cards`
+    - For NVIDIA: `echo "*/* VIDEO_CARDS: -* nvidia" > /etc/portage/package.use/00video-cards`
+    - For AMD: `echo "*/* VIDEO_CARDS: -* amdgpu radeonsi" > /etc/portage/package.use/00video-cards`
+    - For Intel: `echo "*/* VIDEO_CARDS: -* intel" > /etc/portage/package.use/00video-cards`
 10. `nano /etc/portage/make.conf`
 ```
 # Portage Settings
-USE="bindist \
-    -bluetooth \
-    dbus \
+USE="alsa \
+    bindist \
     dist-kernel \
-    -dvd \
     elogind \
-    ffmpeg \
+    -geoclue \
+    -geolocation \
     -gnome \
     kde \
     multilib \
     pipewire \
+    sddm \
     -systemd \
     vaapi \
     vulkan \
@@ -282,17 +332,13 @@ USE="bindist \
 ACCEPT_KEYWORDS="amd64"
 ACCEPT_LICENSE="-* @FREE @BINARY-REDISTRIBUTABLE"
 ```
-11. I needed to resolve some masked packaged due to configuration conflicts. This is what I did to resolve those conflicts:
-    - `mkdir /etc/portage/package.use/media-video`
-    -  `nano /etc/portage/package.use/media-video/pipewire`
-```
-media-video/pipewire bluetooth extra -ffmpeg pipewire-alsa sound-server
-```
-12. `emerge --ask --quiet --update --deep --changed-use @world`
+
+11. `emerge --ask --verbose --quiet --update --deep --changed-use @world`
     - This command updates your system's packages
     - Equivalent to `pacman -Syu` for all you Arch folks out there...ugh!
+12. `emerge -avq app-editors/vim`
 13. `ln -svf /usr/share/zoneinfo/America/{ZONE} /etc/localtime`
-14. `nano /etc/locale.gen`
+14. `vim /etc/locale.gen`
     - Uncomment: `en_US`
 15. `locale-gen`
 16. `eselect locale list`
@@ -305,13 +351,13 @@ media-video/pipewire bluetooth extra -ffmpeg pipewire-alsa sound-server
 From the previous section, I have installed the base Portage system. Now it's time to install system's microcode and the distribution kernel.
 
 1. `mkdir /etc/portage/package.use/sys-kernel`
-2. `nano /etc/portage/package.use/sys-kernel/installkernel`
+2. `vim /etc/portage/package.use/sys-kernel/installkernel`
 ```
 sys-kernel/installkernel dracut grub
 ```
 3. `mkdir /etc/dracut.conf.d`
 4. `blkid`
-5. `nano /etc/dracut.conf.d/00-installkernel.conf`
+5. `vim /etc/dracut.conf.d/00-installkernel.conf`
     - Read [this page](https://wiki.gentoo.org/wiki/Installkernel#Install_chroot_check) if you want to know why we need to do this.
 ```
 kernel_cmdline=" root=UUID={Root Partition UUID} "
@@ -320,15 +366,22 @@ kernel_cmdline=" root=UUID={Root Partition UUID} "
 
 ### <ins>Fstab and Network Configuration</ins>
 
-1. `nano /etc/fstab`
+1. `vim /etc/fstab`
 ```
-/dev/vda1   /boot   vfat    defaults            0 2
-/dev/vda2   none    swap    sw                  0 0
-/dev/vda3   /       btrfs   defaults,noatime    0 1
+/dev/vda1   /boot           vfat    defaults                                                            0 2
+/dev/vda2   none            swap    sw                                                                  0 0
+/dev/vda3   /               btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@       0 1
+/dev/vda3   /root           btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@root   0 1
+/dev/vda3   /opt            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@opt    0 1
+/dev/vda3   /srv            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@srv    0 1
+/dev/vda3   /usr/local      btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@local  0 1
+/dev/vda3   /var            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@var    0 1
+/dev/vda3   /tmp            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@tmp    0 1
+/dev/vdb1   /mnt/secondary  ext4    defaults,noatime                                                    0 1
 ```
 
 2. `echo {System Name} > /etc/hostname`
-3. `nano /etc/conf.d/hostname`
+3. `vim /etc/conf.d/hostname`
 ```
 hostname="{System Name}"
 ```
@@ -337,14 +390,14 @@ hostname="{System Name}"
 6. `emerge -avq net-misc/networkmanager`
 7. `rc-update add NetworkManager default`
 8. `emerge --ask --noreplace net-misc/netifrc`
-9. `nano /etc/conf.d/net`
+9. `vim /etc/conf.d/net`
 ```
 config_{INTERFACE}="dhcp"
 ```
 10. `cd /etc/init.d`
 11. `ln -sv net.lo net.{INTERFACE}`
 12. `rc-update add net.{INTERFACE} default`
-13. `nano /etc/hosts`
+13. `vim /etc/hosts`
 ```
 127.0.0.1   {HOSTNAME}.homenetwork  {HOSTNAME}  localhost
 ::1         {HOSTNAME}.homenetwork  {HOSTNAME}  localhost
@@ -359,7 +412,7 @@ Our filesystem table and networking should be all set up now. Now time to instal
 2. `emerge -avq sys-process/cronie && rc-update add cronie default`
 3. `emerge -avq net-misc/chrony && rc-update add chronyd default`
 4. `emerge -avq net-dns/bind sys-apps/mlocate app-shells/bash-completion app-shells/fish app-shells/zsh sys-block/io-scheduler-udev-rules sys-fs/btrfs-progs sys-fs/xfsprogs sys-fs/e2fsprogs sys-fs/dosfstools sys-fs/ntfs3g sys-fs/zfs`
-5. `echo 'GRUB_PLATFORMS="efi-64"' >> /etc/portage/make.conf`
+5. `echo 'GRUB_PLATFORMS="efi-64 pc"' >> /etc/portage/make.conf`
 6. `emerge --ask --verbose --quiet --update --newuse sys-boot/grub`
 7. `grub-install --efi-directory=/boot`
     - You should get this screen:
@@ -385,14 +438,18 @@ Next step is to create a user and attach it to the Fish shell since I prefer Fis
 1. `useradd -m -G users,wheel,audio,video -s /bin/fish {USER}`
 2. `passwd {USER}`
 3. `mkdir /etc/portage/package.use/app-admin`
-4. `nano /etc/portage/package.use/app-admin/doas`
+4. `vim /etc/portage/package.use/app-admin/doas`
 ```
 app-admin/doas persist
 ```
-5. `emerge -avq app-admin/doas app-editors/vim`
+5. `emerge -avq app-admin/doas`
 6. `vim /etc/doas.conf`
 ```
 permit persist :wheel
+permit nopass {USER} cmd reboot
+permit nopass {USER} cmd poweroff
+permit nopass {USER} cmd /sbin/reboot
+permit nopass {USER} cmd /sbin/poweroff
 ```
 
 To test if the newly created user can escalate permissions, login as the user and disable root login for added security:
@@ -408,58 +465,50 @@ Don't have to do this, but I'll reboot at this time:
 At this point, my newly created user should be able to install the rest of the system I want. Right now, I want to be able to install my desktop, which will be [KDE Plasma](https://wiki.gentoo.org/wiki/KDE), but feel free to use a different desktop environment:
 
 1. `doas mkdir /etc/portage/package.use/dev-qt`
-2. `doas vim /etc/portage/package.use/dev-qt/qtpositioning`
-```
-dev-qt/qtpositioning geoclue
-```
-3. `doas emerge --pretend --getbinpkg --usepkgonly --binpkg-respect-use=n dev-qt/qtwebengine media-libs/opencv`
+2. `doas emerge --pretend --getbinpkg --usepkgonly --binpkg-respect-use=n dev-qt/qtwebengine media-libs/opencv`
     - I'm doing this specifically because OpenCV and QTWebengine takes forever to compile and I want to make sure I install the binaries
     - *Use this in general if you have a package in mind you want to install as a binary but want to know which USE flags are needed to get it*
     - These are the use flags I need to install QTWebengine as a binary:
         - ![QTWebEngine Binary Flags](./Images/QTWebengine-Binary-Flags.png)
         - **Apparently, I need to disable vaapi to install QTWebengine as a binary and I need to enable the intel GPU for media-libs/opencv**
-4. `doas vim /etc/portage/package.use/dev-qt/qtwebengine`
+3. `doas vim /etc/portage/package.use/dev-qt/qtwebengine`
 ```
 dev-qt/qtwebengine -vaapi
+```
+4. `doas vim /etc/portage/package.use/dev-qt/qtmultimedia`
+```
+dev-qt/qtmultimedia -vaapi
 ```
 5. `doas mkdir /etc/portage/package.use/media-libs`
 6. `doas vim /etc/portage/package.use/media-libs/opencv`
 ```
 media-libs/opencv -vaapi
+media-libs/opencv VIDEO_CARDS: -* intel virgl
 ```
-7. `doas mkdir /etc/portage/package.use/www-client`
-8. `doas vim /etc/portage/package.use/www-client/falkon`
+7. `doas mkdir /etc/portage/package.use/media-video`
+8. `doas vim /etc/portage/package.use/media-video/ffmpeg`
 ```
-www-client/falkon -kde
+media-video/ffmpeg -vaapi
 ```
-7. `doas vim /etc/portage/package.use/00video_cards`
-```
-*/* VIDEO_CARDS: -* virgl
-media-libs/opencv VIDEO_CARDS: -\* intel virgl
-```
-8. `doas emerge --ask --verbose --quiet --update --deep --changed-use @world`
-    - Need to do this now that I've been changing the USE flag settings
-9. `doas emerge -avq kde-plasma/plasma-meta kde-apps/kde-apps-meta`
+9. `doas emerge --ask --verbose --quiet --update --deep --changed-use @world`
+    - Need to do this now that I've been changing the USE flag settings. Hopefully you don't need to emerge anything at this point.
+10. `doas emerge -avq kde-plasma/plasma-meta kde-apps/ark kde-apps/dolphin kde-apps/filelight kde-apps/gwenview kde-apps/kate kde-apps/kdenlive kde-apps/konsole kde-apps/okular dev-qt/qtwebengine media-video/ffmpeg dev-qt/qtmultimedia x11-base/xorg-drivers`
     - **This is going to take a little while**
-10. `doas rc-update add elogind boot`
-11. `doas rc-update add dbus default`
-12. `doas usermod -aG pipewire {USER}`
-13. `vim ~/.config/kwalletrc`
+    - **Please make sure that qtwebengine, qtmultimedia, ffmpeg, and opencv are binaries**
+11. `doas rc-update add elogind boot`
+12. `doas rc-update add dbus default`
+13. `doas usermod -aG pipewire {USER}`
+14. `vim ~/.config/kwalletrc`
 ```
 [Wallet]
 Enabled=false
 ```
-14. `doas vim /etc/conf.d/display-manager`
+15. `doas vim /etc/conf.d/display-manager`
 ```
+CHECKVT=7
 DISPLAYMANAGER="sddm"
 ```
-15. `doas rc-update add display-manager default`
-16. `doas vim /etc/doas.conf`
-```
-permit persist :wheel
-permit nopass {USER} as root cmd /sbin/reboot
-permit nopass {USER} as root cmd /sbin/poweroff
-```
+16. `doas rc-update add display-manager default`
 17. `vim ~/.config/fish/functions/reboot.fish`
 ```
 function reboot
@@ -781,3 +830,29 @@ As one final measure, sync, update the world set, and remove unneeded packages:
 ## Installing on Real Hardware
 
 [TBD]
+
+## Appendix
+
+This section will be helpful little sections in case if I get stuck on something.
+
+### Resolving Use Flag Conflicts
+
+In case if I see an issue with an `emerge` command due to something with my USE flags, it's recommended to change use flag configurations on a per-package basis rather than changing the global use flags:
+
+Let's use `media-video/pipewire` for example:
+1. `mkdir /etc/portage/package.use/media-video`
+2. `vim /etc/portage/package.use/media-video/pipewire`
+```
+media-video/pipewire sound-server
+```
+
+### Emerging an Ebuild instead of a Binary
+
+In some cases, likely due to a use flag misconfiguration, Portage will try to fetch an ebuild even though there is a binary available for a certain package.
+
+In these cases, do this:
+`doas emerge --pretend --getbinpkg --usepkgonly --binpkg-respect-use=n (PACKAGE)`
+
+What this will do is simulate fetching the binary package and it will give info on what USE flags the binary is using.
+
+**However, in some cases, with the Use flag configuration, a binary cannot be fetched along with its dependencies, so that package must be built. For example, apparently binary packages that fetch Pipewire and KDE Plasma cannot be installed without pulling `systemd`. If I want to omit `systemd`, I have to build some of those packages with the unique Use flag combinations.**
