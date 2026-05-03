@@ -137,7 +137,6 @@ I need to create btrfs subvolumes:
 - `btrfs subvolume create @local`
 - `btrfs subvolume create @var`
 - `btrfs subvolume create @tmp`
-- `btrfs subvolume create @.snapshots`
 - `cd`
 - `umount -r /mnt/gentoo`
 
@@ -368,16 +367,16 @@ kernel_cmdline=" root=UUID={Root Partition UUID} "
 
 1. `vim /etc/fstab`
 ```
-/dev/vda1   /boot           vfat    defaults                                                            0 2
-/dev/vda2   none            swap    sw                                                                  0 0
-/dev/vda3   /               btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@       0 1
-/dev/vda3   /root           btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@root   0 1
-/dev/vda3   /opt            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@opt    0 1
-/dev/vda3   /srv            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@srv    0 1
-/dev/vda3   /usr/local      btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@local  0 1
-/dev/vda3   /var            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@var    0 1
-/dev/vda3   /tmp            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@tmp    0 1
-/dev/vdb1   /mnt/secondary  ext4    defaults,noatime                                                    0 1
+/dev/vda1   /boot           vfat    defaults                                                                0 2
+/dev/vda2   none            swap    sw                                                                      0 0
+/dev/vda3   /               btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@           0 1
+/dev/vda3   /root           btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@root       0 1
+/dev/vda3   /opt            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@opt        0 1
+/dev/vda3   /srv            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@srv        0 1
+/dev/vda3   /usr/local      btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@local      0 1
+/dev/vda3   /var            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@var        0 1
+/dev/vda3   /tmp            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@tmp        0 1
+/dev/vdb1   /mnt/secondary  ext4    defaults,noatime                                                        0 1
 ```
 
 2. `echo {System Name} > /etc/hostname`
@@ -715,6 +714,12 @@ sys-libs/libudev-compat
 ```
 games-util/steam-launcher ValveSteamLicense
 ```
+- `doas mkdir -p /etc/portage/package.use/sys-libs`
+- `doas vim /etc/portage/package.use/sys-libs/ncurses`
+```
+sys-libs/ncurses -gpm
+```
+- `doas emerge --ask --verbose --quiet --update --deep --changed-use @world`
 - `doas emerge -avq games-util/steam-launcher app-misc/fastfetch sys-process/htop`
 
 Install Discord:
@@ -766,7 +771,8 @@ app-emulation/libvirt virt-network qemu udev -fuse -virtualbox
 ```
 - `doas vim /etc/portage/package.use/app-emulation/qemu`
 ```
-app-emulation/qemu -pulseaudio -wayland QEMU_SOFTMMU_TARGETS: x86_64
+app-emulation/qemu -pulseaudio -wayland
+app-emulation/qemu QEMU_SOFTMMU_TARGETS: x86_64
 ```
 
 - `doas emerge -avq app-emulation/qemu app-emulation/libvirt app-emulation/virt-manager`
@@ -781,44 +787,74 @@ Install Game Emulators:
 ```
 games-emulation/dolphin FatFs
 ```
-- `doas emerge -avq games-emulation/pcsx2 games-emulation/dolphin`
+- `doas eselect repository enable guru`
+- `does emerge --sync`
+- `doas mkdir /etc/portage/package.accept_keywords/games-emulation`
+- `doas vim /etc/portage/package.accept_keywords/games-emulation/rpcs3`
+```
+games-emulation/rpcs3 ~amd64
+```
+- `doas emerge -avq games-emulation/pcsx2 games-emulation/dolphin games-emulation/rpcs3`
 
-Install [Snapper](https://wiki.gentoo.org/wiki/Snapper#Rollback) to allow for System Backups:
+Install [Snapper](https://wiki.gentoo.org/wiki/Snapper) to allow for System Backups:
 
 - `doas emerge -avq app-backup/snapper`
 - `doas snapper -c root create-config /`
+- `mount -o defaults,noatime,compress=zstd,commit=120,autodefrag,subvolid=(ID) /dev/vda3 /.snapshots`
+    - ID = Subvolume ID for /.snapshots created by Snapper
+- `doas vim /etc/fstab`
+```
+/dev/vda1   /boot           vfat    defaults                                                                0 2
+/dev/vda2   none            swap    sw                                                                      0 0
+/dev/vda3   /               btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@           0 1
+/dev/vda3   /root           btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@root       0 1
+/dev/vda3   /opt            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@opt        0 1
+/dev/vda3   /srv            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@srv        0 1
+/dev/vda3   /usr/local      btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@local      0 1
+/dev/vda3   /var            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@var        0 1
+/dev/vda3   /tmp            btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvol=@tmp        0 1
+/dev/vda3   /.snapshots     btrfs   defaults,noatime,compress=zstd,commit=120,autodefrag,subvolid=(ID)      0 1
+/dev/vdb1   /mnt/secondary  ext4    defaults,noatime                                                        0 1
+```
 - `doas snapper create --type single --description "Test Snapshot"`
     - You should see a snapshot in */.snapshots*
 
-Install [grub-btrfs](git clone https://github.com/Antynea/grub-btrfs.git)
+- `lsblk`
 
-- `doas eselect repository enable guru`
-- `doas emerge --sync`
+![lsblk](./Images/Lsblk3.png)
+
+Install [grub-btrfs](https://github.com/Antynea/grub-btrfs.git)
+
 - `doas mkdir /etc/portage/package.accept_keywords/app-backup`
 - `doas vim /etc/portage/package.accept_keywords/app-backup/grub-btrfs`
 ```
 app-backup/grub-btrfs ~amd64
 ```
-- `doas emerge -avq app-backup/grub-btrfs`
+- `doas emerge -avq app-backup/grub-btrfs app-admin/btrfs-assistant`
 - `doas vim /etc/default/grub-btrfs/config`
 ```
 GRUB_BTRFS_GRUB_DIRNAME="/boot/grub"
 GRUB_BTRFS_MKCONFIG=/usr/sbin/grub-mkconfig
 GRUB_BTRFS_SCRIPT_CHECK=grub-script-check
 ```
-- Test grub-mkconfig: `doas grub-mkconfig -o /boot/grub/grub.cfg`
+- `doas grub-mkconfig -o /boot/grub/grub.cfg`
     - You should see something like this:
         - ![GRUB Snapshot](./Images/Grub-Snapshot.png)
 
 - After a few hours, there should be a few snapshots that are taken hourly:
     - ![Snapper Snapshots](./Images/Snapper-Snapshots.png)
 
-- `doas emerge -avq app-admin/btrfs-assistant`
-
 As one final measure, sync, update the world set, and remove unneeded packages:
 
-- `doas emerge --noreplace app-editors/nano app-portage/cpuid2cpuflags app-portage/mirrorselect app-crypt/sbsigntools app-arch/7zip`
-- `doas emerge --sync && emerge --ask --verbose --update --deep --changed-use @world`
+- `vim ~/.config/fish/functions/update-world.fish`
+```
+function update-world
+    doas emerge --sync && doas emerge --ask --verbose --quiet --update --deep --changed-use @world && doas grub-mkconfig -o /boot/grub/grub.cfg
+end
+```
+
+- `doas emerge --noreplace app-editors/nano app-portage/cpuid2cpuflags app-portage/mirrorselect`
+- `update-world`
 - `doas emerge -ac`
 - `reboot`
     - You should see snapshots here:
@@ -856,3 +892,7 @@ In these cases, do this:
 What this will do is simulate fetching the binary package and it will give info on what USE flags the binary is using.
 
 **However, in some cases, with the Use flag configuration, a binary cannot be fetched along with its dependencies, so that package must be built. For example, apparently binary packages that fetch Pipewire and KDE Plasma cannot be installed without pulling `systemd`. If I want to omit `systemd`, I have to build some of those packages with the unique Use flag combinations.**
+
+### How to Check Build Logs
+
+Go to: */var/tmp/portage/(CATEGORY)/(PACKAGE)/temp/build.log*
